@@ -40,3 +40,18 @@ pub async fn upload_object(
         .send()
         .await
 }
+
+pub async fn remove_object(
+    client: &Client,
+    bucket: &str,
+    key: &str,
+) -> Result<(), aws_sdk_s3::Error> {
+    client
+        .delete_object()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await?;
+
+    Ok(())
+}
