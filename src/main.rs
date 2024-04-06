@@ -63,7 +63,7 @@ async fn upload_image(mut multipart: Multipart) -> impl IntoResponse {
             //     _ => return StatusCode::UNSUPPORTED_MEDIA_TYPE,
             // }
 
-            let row = ImageStruct {
+            let record = ImageStruct {
                 uuid: Uuid::new_v4(),
                 file_name,
                 owner: "anon".to_string(),
@@ -74,22 +74,23 @@ async fn upload_image(mut multipart: Multipart) -> impl IntoResponse {
                 &client,
                 "image",
                 data,
-                &row.uuid.as_hyphenated().to_string(),
+                &record.uuid.as_hyphenated().to_string(),
             )
             .await
             .unwrap();
 
-            db::insert_image_record(&pool, &row).await.unwrap();
+            db::insert_image_record(&pool, &record).await.unwrap();
 
-            (StatusCode::CREATED, Json(row))
+            (
+                StatusCode::CREATED,
+                [(header::CONTENT_TYPE, "application/json")],
+                serde_json::to_string(&record).unwrap(),
+            )
         }
         None => (
             StatusCode::BAD_REQUEST,
-            Json(ImageStruct {
-                uuid: Uuid::nil(),
-                file_name: String::new(),
-                owner: String::new(),
-            }),
+            [(header::CONTENT_TYPE, "text/plain")],
+            "No image provided".into(),
         ),
     }
 }
@@ -157,7 +158,7 @@ async fn patch_image(
         .filter(|s| !s.is_empty());
 
     if new_file_name.is_none() && new_owner.is_none() {
-        return StatusCode::BAD_REQUEST;
+        return (StatusCode::BAD_REQUEST, "No valid data provided for update");
     }
 
     db::update_image_record(
@@ -169,7 +170,7 @@ async fn patch_image(
     .await
     .unwrap();
 
-    StatusCode::OK
+    (StatusCode::OK, "Image record updated successfully")
 }
 
 async fn view_image(Path(uuid): Path<String>) -> impl IntoResponse {
