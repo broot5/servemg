@@ -2,10 +2,10 @@ mod db;
 mod storage;
 
 use axum::{
-    extract::{Multipart, Path},
+    extract::{DefaultBodyLimit, Json, Multipart, Path},
     http::{header, StatusCode},
     response::{Html, IntoResponse},
-    routing::{get, patch, post},
+    routing::{get, post},
     Router,
 };
 use uuid::Uuid;
@@ -20,10 +20,12 @@ async fn main() {
 
     let app = Router::new()
         .route("/images", post(upload_image))
-        .route("/images/:uuid", get(get_image).delete(delete_image))
-        .route("/images/:uuid/name", patch(rename_image))
-        .route("/images/:uuid/owner", patch(transfer_image))
-        .route("/images/:uuid/view", get(view_image));
+        .route(
+            "/images/:uuid",
+            get(get_image).delete(delete_image).patch(patch_image),
+        )
+        .route("/images/:uuid/view", get(view_image))
+        .layer(DefaultBodyLimit::max(52428800)); // 50MB
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -76,18 +78,24 @@ async fn upload_image(mut multipart: Multipart) -> impl IntoResponse {
 
             db::insert_image_record(&row).await.unwrap();
 
-            (
-                StatusCode::CREATED,
-                format!("Successfully uploaded image as {}", &row.uuid),
-            )
+            (StatusCode::CREATED, Json(row))
         }
-        None => (StatusCode::BAD_REQUEST, "BAD REQUEST".to_string()),
+        None => (
+            StatusCode::BAD_REQUEST,
+            Json(ImageStruct {
+                uuid: Uuid::nil(),
+                file_name: String::new(),
+                owner: String::new(),
+            }),
+        ),
     }
 }
 
 async fn get_image(Path(uuid): Path<String>) -> impl IntoResponse {
     // uuid로 storage 에서 바로 불러오기
-    let row = db::get_row(Uuid::parse_str(&uuid).unwrap()).await.unwrap();
+    let row = db::get_image_record(Uuid::parse_str(&uuid).unwrap())
+        .await
+        .unwrap();
 
     let content_type = mime_guess::from_path(std::path::Path::new(&row.file_name))
         .first_raw()
@@ -123,18 +131,25 @@ async fn delete_image(Path(uuid): Path<String>) -> impl IntoResponse {
     StatusCode::OK
 }
 
-async fn rename_image(Path(uuid): Path<String>) {
-    // 해당 uuid 가진 row의 name column 변경
-    //db::update_file_name(uuid, new_file_name)
-}
+async fn patch_image(Path(uuid): Path<String>, Json(payload): Json<serde_json::Value>) {
+    // 해당 uuid 가진 row의 file_name column 변경
+    // 해당 uuid 가진 row의 owner column 변경
+    let new_file_name = &payload["file_name"];
+    let new_owner = &payload["owner"];
 
-async fn transfer_image(Path(uuid): Path<String>) {
-    // 해당 id 가진 row의 owner column 변경
+    if new_file_name.is_string() {
+        db::update_image_file_name(Uuid::parse_str(&uuid).unwrap(), &new_file_name.to_string())
+            .await
+            .unwrap();
+    }
+
+    if new_owner.is_string() {
+        db::update_image_owner(Uuid::parse_str(&uuid).unwrap(), &new_owner.to_string())
+            .await
+            .unwrap();
+    }
 }
 
 async fn view_image(Path(uuid): Path<String>) -> impl IntoResponse {
-    Html(format!(
-        r#"<img src="http://127.0.0.1:3000/images/{}" alt="image">"#,
-        uuid
-    ))
+    Html(format!(r#"<img src="/images/{}" alt="image">"#, uuid))
 }

@@ -11,7 +11,7 @@ enum Image {
     Owner,
 }
 
-#[derive(sqlx::FromRow, Debug)]
+#[derive(sqlx::FromRow, serde::Serialize, serde::Deserialize, Debug)]
 pub struct ImageStruct {
     pub uuid: Uuid,
     pub file_name: String,
@@ -68,7 +68,7 @@ pub async fn insert_image_record(image_struct: &ImageStruct) -> Result<PgQueryRe
     sqlx::query_with(&sql, values).execute(&pool).await
 }
 
-pub async fn get_row(uuid: Uuid) -> Result<ImageStruct, sqlx::Error> {
+pub async fn get_image_record(uuid: Uuid) -> Result<ImageStruct, sqlx::Error> {
     let pool = sqlx::PgPool::connect(&env::var("DB_URL").unwrap())
         .await
         .unwrap();
@@ -97,19 +97,33 @@ pub async fn delete_image_record(uuid: Uuid) -> Result<PgQueryResult, sqlx::Erro
     sqlx::query_with(&sql, values).execute(&pool).await
 }
 
-// pub async fn update_file_name(
-//     uuid: Uuid,
-//     new_file_name: &str,
-// ) -> Result<PgQueryResult, sqlx::Error> {
-//     let pool = sqlx::PgPool::connect(&env::var("DB_URL").unwrap())
-//         .await
-//         .unwrap();
+pub async fn update_image_file_name(
+    uuid: Uuid,
+    new_file_name: &str,
+) -> Result<PgQueryResult, sqlx::Error> {
+    let pool = sqlx::PgPool::connect(&env::var("DB_URL").unwrap())
+        .await
+        .unwrap();
 
-//     let (sql, values) = Query::update()
-//         .table(Image::Table)
-//         .value(Image::FileName, new_file_name)
-//         .and_where(Expr::col(Image::Uuid).eq(uuid))
-//         .build_sqlx(PostgresQueryBuilder);
+    let (sql, values) = Query::update()
+        .table(Image::Table)
+        .value(Image::FileName, new_file_name)
+        .and_where(Expr::col(Image::Uuid).eq(uuid))
+        .build_sqlx(PostgresQueryBuilder);
 
-//     sqlx::query_with(&sql, values).execute(&pool).await
-// }
+    sqlx::query_with(&sql, values).execute(&pool).await
+}
+
+pub async fn update_image_owner(uuid: Uuid, new_owner: &str) -> Result<PgQueryResult, sqlx::Error> {
+    let pool = sqlx::PgPool::connect(&env::var("DB_URL").unwrap())
+        .await
+        .unwrap();
+
+    let (sql, values) = Query::update()
+        .table(Image::Table)
+        .value(Image::Owner, new_owner)
+        .and_where(Expr::col(Image::Uuid).eq(uuid))
+        .build_sqlx(PostgresQueryBuilder);
+
+    sqlx::query_with(&sql, values).execute(&pool).await
+}
