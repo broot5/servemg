@@ -25,11 +25,11 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn upload_image(mut multipart: Multipart) -> StatusCode {
+async fn upload_image(mut multipart: Multipart) -> (StatusCode, String) {
     // 이미지 읽어서 storage에 저장 후 db에 저장
     while let Some(field) = multipart.next_field().await.unwrap() {
-        let name = field.name().unwrap().to_string();
-        let file_name = field.file_name().unwrap().to_string();
+        let name = field.name().unwrap_or_default().to_string();
+        let file_name = field.file_name().unwrap_or_default().to_string();
         let content_type = field.content_type().unwrap().to_string();
         let data = field.bytes().await.unwrap();
 
@@ -37,6 +37,21 @@ async fn upload_image(mut multipart: Multipart) -> StatusCode {
             "Length of `{name}` (`{file_name}`: `{content_type}`) is {} bytes",
             data.len()
         );
+
+        // Check if content_type is image
+
+        // let file_extension = std::path::Path::new(&file_name)
+        //     .extension()
+        //     .unwrap()
+        //     .to_str()
+        //     .unwrap();
+
+        // match file_extension {
+        //     "jpg" => {}
+        //     "png" => {}
+        //     "webp" => {}
+        //     _ => return StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        // }
 
         let uuid = Uuid::new_v4();
 
@@ -49,13 +64,20 @@ async fn upload_image(mut multipart: Multipart) -> StatusCode {
             .await
             .unwrap();
 
-        return StatusCode::CREATED;
+        return (
+            StatusCode::CREATED,
+            "Succesfully uploaded image".to_string(),
+        );
     }
-    return StatusCode::BAD_REQUEST;
+    return (StatusCode::BAD_REQUEST, "BAD REQUEST".to_string());
 }
 
 async fn get_image(Path(uuid): Path<String>) {
     // uuid로 storage 에서 바로 불러오기
+    //let file_name =
+
+    //mime_guess::from_path()
+    let row = db::get_row(Uuid::parse_str(&uuid).unwrap()).await.unwrap();
 }
 
 async fn delete_image(Path(uuid): Path<String>) -> StatusCode {

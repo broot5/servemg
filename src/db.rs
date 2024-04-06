@@ -3,11 +3,19 @@ use sea_query_binder::SqlxBinder;
 use sqlx::postgres::PgQueryResult;
 use std::env;
 use uuid::Uuid;
+
 enum Image {
     Table,
     Uuid,
     FileName,
     Owner,
+}
+
+#[derive(sqlx::FromRow, Debug)]
+pub struct ImageStruct {
+    uuid: Uuid,
+    file_name: String,
+    owner: String,
 }
 
 impl Iden for Image {
@@ -58,6 +66,22 @@ pub async fn insert_image_record(
         .build_sqlx(PostgresQueryBuilder);
 
     sqlx::query_with(&sql, values).execute(&pool).await
+}
+
+pub async fn get_row(uuid: Uuid) -> Result<ImageStruct, sqlx::Error> {
+    let pool = sqlx::PgPool::connect(&env::var("DB_URL").unwrap())
+        .await
+        .unwrap();
+
+    let (sql, values) = Query::select()
+        .columns([Image::Uuid, Image::FileName, Image::Owner])
+        .from(Image::Table)
+        .and_where(Expr::col(Image::Uuid).eq(uuid))
+        .build_sqlx(PostgresQueryBuilder);
+
+    sqlx::query_as_with::<_, ImageStruct, _>(&sql, values)
+        .fetch_one(&pool)
+        .await
 }
 
 pub async fn delete_image_record(uuid: Uuid) -> Result<PgQueryResult, sqlx::Error> {

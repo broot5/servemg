@@ -16,3 +16,4 @@ bytes = "1.6"
 dotenvy = "0.15"
 uuid = { version = "1.8", features = [ "v4", "fast-rng", "macro-diagnostics" ] }
 sea-query-binder = { version = "0.5", features = [ "sqlx-postgres", "with-uuid" ] }
+mime_guess = "2.0"
