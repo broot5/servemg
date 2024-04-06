@@ -4,7 +4,7 @@ mod storage;
 use axum::{
     extract::{Multipart, Path},
     http::{header, StatusCode},
-    response::IntoResponse,
+    response::{Html, IntoResponse},
     routing::{get, patch, post},
     Router,
 };
@@ -22,7 +22,8 @@ async fn main() {
         .route("/images", post(upload_image))
         .route("/images/:uuid", get(get_image).delete(delete_image))
         .route("/images/:uuid/name", patch(rename_image))
-        .route("/images/:uuid/owner", patch(transfer_image));
+        .route("/images/:uuid/owner", patch(transfer_image))
+        .route("/images/:uuid/view", get(view_image));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -96,7 +97,7 @@ async fn get_image(Path(uuid): Path<String>) -> impl IntoResponse {
         (header::CONTENT_TYPE, content_type.to_string()),
         (
             header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{}\"", &row.file_name),
+            format!(r#"attachment; filename="{}""#, &row.file_name),
         ),
     ];
 
@@ -108,7 +109,7 @@ async fn get_image(Path(uuid): Path<String>) -> impl IntoResponse {
     (headers, body)
 }
 
-async fn delete_image(Path(uuid): Path<String>) -> StatusCode {
+async fn delete_image(Path(uuid): Path<String>) -> impl IntoResponse {
     // 해당 uuid 가진 row storage에서 삭제하고 db에서 삭제
     let client = storage::get_client().await.unwrap();
     storage::remove_object(&client, "image", &uuid)
@@ -129,4 +130,11 @@ async fn rename_image(Path(uuid): Path<String>) {
 
 async fn transfer_image(Path(uuid): Path<String>) {
     // 해당 id 가진 row의 owner column 변경
+}
+
+async fn view_image(Path(uuid): Path<String>) -> impl IntoResponse {
+    Html(format!(
+        r#"<img src="http://127.0.0.1:3000/images/{}" alt="image">"#,
+        uuid
+    ))
 }
