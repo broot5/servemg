@@ -13,9 +13,9 @@ enum Image {
 
 #[derive(sqlx::FromRow, Debug)]
 pub struct ImageStruct {
-    uuid: Uuid,
-    file_name: String,
-    owner: String,
+    pub uuid: Uuid,
+    pub file_name: String,
+    pub owner: String,
 }
 
 impl Iden for Image {
@@ -50,11 +50,7 @@ pub async fn create_table() -> Result<PgQueryResult, sqlx::Error> {
     sqlx::query(&sql).execute(&pool).await
 }
 
-pub async fn insert_image_record(
-    uuid: Uuid,
-    file_name: &str,
-    owner: &str,
-) -> Result<PgQueryResult, sqlx::Error> {
+pub async fn insert_image_record(image_struct: &ImageStruct) -> Result<PgQueryResult, sqlx::Error> {
     let pool = sqlx::PgPool::connect(&env::var("DB_URL").unwrap())
         .await
         .unwrap();
@@ -62,7 +58,11 @@ pub async fn insert_image_record(
     let (sql, values) = Query::insert()
         .into_table(Image::Table)
         .columns([Image::Uuid, Image::FileName, Image::Owner])
-        .values_panic([uuid.into(), file_name.into(), owner.into()])
+        .values_panic([
+            image_struct.uuid.into(),
+            image_struct.file_name.clone().into(),
+            image_struct.owner.clone().into(),
+        ])
         .build_sqlx(PostgresQueryBuilder);
 
     sqlx::query_with(&sql, values).execute(&pool).await
@@ -74,7 +74,7 @@ pub async fn get_row(uuid: Uuid) -> Result<ImageStruct, sqlx::Error> {
         .unwrap();
 
     let (sql, values) = Query::select()
-        .columns([Image::Uuid, Image::FileName, Image::Owner])
+        .column(Asterisk)
         .from(Image::Table)
         .and_where(Expr::col(Image::Uuid).eq(uuid))
         .build_sqlx(PostgresQueryBuilder);

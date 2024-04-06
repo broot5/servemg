@@ -3,11 +3,14 @@ mod storage;
 
 use axum::{
     extract::{Multipart, Path},
-    http::StatusCode,
+    http::{header, StatusCode},
+    response::IntoResponse,
     routing::{get, patch, post},
     Router,
 };
 use uuid::Uuid;
+
+use db::ImageStruct;
 
 #[tokio::main]
 async fn main() {
@@ -25,59 +28,84 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn upload_image(mut multipart: Multipart) -> (StatusCode, String) {
+async fn upload_image(mut multipart: Multipart) -> impl IntoResponse {
     // 이미지 읽어서 storage에 저장 후 db에 저장
-    while let Some(field) = multipart.next_field().await.unwrap() {
-        let name = field.name().unwrap_or_default().to_string();
-        let file_name = field.file_name().unwrap_or_default().to_string();
-        let content_type = field.content_type().unwrap().to_string();
-        let data = field.bytes().await.unwrap();
+    match multipart.next_field().await.unwrap() {
+        Some(field) => {
+            let name = field.name().unwrap_or_default().to_string();
+            let file_name = field.file_name().unwrap_or_default().to_string();
+            let content_type = field.content_type().unwrap().to_string();
+            let data = field.bytes().await.unwrap();
 
-        println!(
-            "Length of `{name}` (`{file_name}`: `{content_type}`) is {} bytes",
-            data.len()
-        );
+            println!(
+                "Length of `{name}` (`{file_name}`: `{content_type}`) is {} bytes",
+                data.len()
+            );
 
-        // Check if content_type is image
+            // Check if content_type is image
 
-        // let file_extension = std::path::Path::new(&file_name)
-        //     .extension()
-        //     .unwrap()
-        //     .to_str()
-        //     .unwrap();
+            // let file_extension = std::path::Path::new(&file_name)
+            //     .extension()
+            //     .unwrap()
+            //     .to_str()
+            //     .unwrap();
 
-        // match file_extension {
-        //     "jpg" => {}
-        //     "png" => {}
-        //     "webp" => {}
-        //     _ => return StatusCode::UNSUPPORTED_MEDIA_TYPE,
-        // }
+            // match file_extension {
+            //     "jpg" => {}
+            //     "png" => {}
+            //     "webp" => {}
+            //     _ => return StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            // }
 
-        let uuid = Uuid::new_v4();
+            let row = ImageStruct {
+                uuid: Uuid::new_v4(),
+                file_name,
+                owner: "anon".to_string(),
+            };
 
-        let client = storage::get_client().await.unwrap();
-        storage::upload_object(&client, "image", data, &uuid.as_hyphenated().to_string())
+            let client = storage::get_client().await.unwrap();
+            storage::upload_object(
+                &client,
+                "image",
+                data,
+                &row.uuid.as_hyphenated().to_string(),
+            )
             .await
             .unwrap();
 
-        db::insert_image_record(uuid, &file_name, "anon")
-            .await
-            .unwrap();
+            db::insert_image_record(&row).await.unwrap();
 
-        return (
-            StatusCode::CREATED,
-            "Succesfully uploaded image".to_string(),
-        );
+            (
+                StatusCode::CREATED,
+                format!("Successfully uploaded image as {}", &row.uuid),
+            )
+        }
+        None => (StatusCode::BAD_REQUEST, "BAD REQUEST".to_string()),
     }
-    return (StatusCode::BAD_REQUEST, "BAD REQUEST".to_string());
 }
 
-async fn get_image(Path(uuid): Path<String>) {
+async fn get_image(Path(uuid): Path<String>) -> impl IntoResponse {
     // uuid로 storage 에서 바로 불러오기
-    //let file_name =
-
-    //mime_guess::from_path()
     let row = db::get_row(Uuid::parse_str(&uuid).unwrap()).await.unwrap();
+
+    let content_type = mime_guess::from_path(std::path::Path::new(&row.file_name))
+        .first_raw()
+        .unwrap();
+
+    let headers = [
+        (header::CONTENT_TYPE, content_type.to_string()),
+        (
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", &row.file_name),
+        ),
+    ];
+
+    let client = storage::get_client().await.unwrap();
+    let body = storage::get_object(&client, "image", &row.uuid.as_hyphenated().to_string())
+        .await
+        .unwrap();
+
+    (headers, body)
 }
 
 async fn delete_image(Path(uuid): Path<String>) -> StatusCode {

@@ -6,6 +6,7 @@ use aws_sdk_s3::{
     Client,
 };
 use bytes::Bytes;
+use bytes::BytesMut;
 use std::env;
 
 pub async fn get_client() -> Result<Client, aws_sdk_s3::Error> {
@@ -27,14 +28,14 @@ pub async fn get_client() -> Result<Client, aws_sdk_s3::Error> {
 
 pub async fn upload_object(
     client: &Client,
-    bucket_name: &str,
+    bucket: &str,
     bytes: Bytes,
     key: &str,
 ) -> Result<PutObjectOutput, SdkError<PutObjectError>> {
     let body = ByteStream::from(bytes);
     client
         .put_object()
-        .bucket(bucket_name)
+        .bucket(bucket)
         .key(key)
         .body(body)
         .send()
@@ -54,4 +55,19 @@ pub async fn remove_object(
         .await?;
 
     Ok(())
+}
+
+pub async fn get_object(
+    client: &Client,
+    bucket: &str,
+    key: &str,
+) -> Result<Bytes, aws_sdk_s3::Error> {
+    let mut object = client.get_object().bucket(bucket).key(key).send().await?;
+
+    let mut bytes = BytesMut::new();
+    while let Some(chunk) = object.body.try_next().await.unwrap() {
+        bytes.extend_from_slice(&chunk);
+    }
+
+    Ok(bytes.into())
 }
