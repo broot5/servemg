@@ -38,30 +38,12 @@ async fn upload_image(mut multipart: Multipart) -> impl IntoResponse {
 
     match multipart.next_field().await.unwrap() {
         Some(field) => {
-            let name = field.name().unwrap_or_default().to_string();
+            // let name = field.name().unwrap_or_default().to_string();
             let file_name = field.file_name().unwrap_or_default().to_string();
-            let content_type = field.content_type().unwrap().to_string();
+            // let content_type = field.content_type().unwrap().to_string();
             let data = field.bytes().await.unwrap();
 
-            println!(
-                "Length of `{name}` (`{file_name}`: `{content_type}`) is {} bytes",
-                data.len()
-            );
-
             // Check if content_type is image
-
-            // let file_extension = std::path::Path::new(&file_name)
-            //     .extension()
-            //     .unwrap()
-            //     .to_str()
-            //     .unwrap();
-
-            // match file_extension {
-            //     "jpg" => {}
-            //     "png" => {}
-            //     "webp" => {}
-            //     _ => return StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            // }
 
             let record = ImageStruct {
                 uuid: Uuid::new_v4(),
