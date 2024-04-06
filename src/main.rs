@@ -146,13 +146,19 @@ async fn patch_image(
     // 해당 uuid 가진 row의 owner column 변경
     let pool = db::create_pool().await.unwrap();
 
-    let new_file_name = payload["file_name"]
-        .is_string()
-        .then(|| payload["file_name"].as_str().unwrap());
+    let new_file_name = payload
+        .get("file_name")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
 
-    let new_owner = payload["owner"]
-        .is_string()
-        .then(|| payload["owner"].as_str().unwrap());
+    let new_owner = payload
+        .get("owner")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+
+    if new_file_name.is_none() && new_owner.is_none() {
+        return StatusCode::BAD_REQUEST;
+    }
 
     db::update_image_record(
         &pool,
