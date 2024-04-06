@@ -35,7 +35,8 @@ impl Iden for Image {
 }
 
 pub async fn create_pool() -> Result<Pool<Postgres>, sqlx::Error> {
-    sqlx::PgPool::connect(&env::var("DB_URL").unwrap()).await
+    let db_url = env::var("DB_URL").expect("DB_URL environment variable not found");
+    sqlx::PgPool::connect(&db_url).await
 }
 
 pub async fn create_table(pool: &Pool<Postgres>) -> Result<PgQueryResult, sqlx::Error> {
@@ -100,7 +101,10 @@ pub async fn update_image_record(
     new_file_name: Option<&str>,
     new_owner: Option<&str>,
 ) -> Result<PgQueryResult, sqlx::Error> {
-    let mut query = Query::update().table(Image::Table).to_owned();
+    let mut query = Query::update()
+        .table(Image::Table)
+        .and_where(Expr::col(Image::Uuid).eq(uuid))
+        .to_owned();
 
     if let Some(file_name) = new_file_name {
         query = query.value(Image::FileName, file_name).to_owned();
@@ -110,9 +114,7 @@ pub async fn update_image_record(
         query = query.value(Image::Owner, owner).to_owned();
     }
 
-    let (sql, values) = query
-        .and_where(Expr::col(Image::Uuid).eq(uuid))
-        .build_sqlx(PostgresQueryBuilder);
+    let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
 
     sqlx::query_with(&sql, values).execute(pool).await
 }
