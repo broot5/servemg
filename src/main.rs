@@ -16,7 +16,8 @@ use db::ImageStruct;
 async fn main() {
     dotenvy::dotenv().expect(".env file not found");
 
-    db::create_table().await.unwrap();
+    let pool = db::create_pool().await.unwrap();
+    db::create_table(&pool).await.unwrap();
 
     let app = Router::new()
         .route("/images", post(upload_image))
@@ -33,6 +34,8 @@ async fn main() {
 
 async fn upload_image(mut multipart: Multipart) -> impl IntoResponse {
     // 이미지 읽어서 storage에 저장 후 db에 저장
+    let pool = db::create_pool().await.unwrap();
+
     match multipart.next_field().await.unwrap() {
         Some(field) => {
             let name = field.name().unwrap_or_default().to_string();
@@ -76,7 +79,7 @@ async fn upload_image(mut multipart: Multipart) -> impl IntoResponse {
             .await
             .unwrap();
 
-            db::insert_image_record(&row).await.unwrap();
+            db::insert_image_record(&pool, &row).await.unwrap();
 
             (StatusCode::CREATED, Json(row))
         }
@@ -93,7 +96,9 @@ async fn upload_image(mut multipart: Multipart) -> impl IntoResponse {
 
 async fn get_image(Path(uuid): Path<String>) -> impl IntoResponse {
     // uuid로 storage 에서 바로 불러오기
-    let row = db::get_image_record(Uuid::parse_str(&uuid).unwrap())
+    let pool = db::create_pool().await.unwrap();
+
+    let row = db::get_image_record(&pool, Uuid::parse_str(&uuid).unwrap())
         .await
         .unwrap();
 
@@ -119,12 +124,14 @@ async fn get_image(Path(uuid): Path<String>) -> impl IntoResponse {
 
 async fn delete_image(Path(uuid): Path<String>) -> impl IntoResponse {
     // 해당 uuid 가진 row storage에서 삭제하고 db에서 삭제
+    let pool = db::create_pool().await.unwrap();
+
     let client = storage::get_client().await.unwrap();
     storage::remove_object(&client, "image", &uuid)
         .await
         .unwrap();
 
-    db::delete_image_record(Uuid::parse_str(&uuid).unwrap())
+    db::delete_image_record(&pool, Uuid::parse_str(&uuid).unwrap())
         .await
         .unwrap();
 
@@ -134,19 +141,29 @@ async fn delete_image(Path(uuid): Path<String>) -> impl IntoResponse {
 async fn patch_image(Path(uuid): Path<String>, Json(payload): Json<serde_json::Value>) {
     // 해당 uuid 가진 row의 file_name column 변경
     // 해당 uuid 가진 row의 owner column 변경
+    let pool = db::create_pool().await.unwrap();
+
     let new_file_name = &payload["file_name"];
     let new_owner = &payload["owner"];
 
     if new_file_name.is_string() {
-        db::update_image_file_name(Uuid::parse_str(&uuid).unwrap(), &new_file_name.to_string())
-            .await
-            .unwrap();
+        db::update_image_file_name(
+            &pool,
+            Uuid::parse_str(&uuid).unwrap(),
+            &new_file_name.to_string(),
+        )
+        .await
+        .unwrap();
     }
 
     if new_owner.is_string() {
-        db::update_image_owner(Uuid::parse_str(&uuid).unwrap(), &new_owner.to_string())
-            .await
-            .unwrap();
+        db::update_image_owner(
+            &pool,
+            Uuid::parse_str(&uuid).unwrap(),
+            &new_owner.to_string(),
+        )
+        .await
+        .unwrap();
     }
 }
 
