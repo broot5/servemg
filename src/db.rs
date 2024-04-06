@@ -94,28 +94,23 @@ pub async fn delete_image_record(
     sqlx::query_with(&sql, values).execute(pool).await
 }
 
-pub async fn update_image_file_name(
+pub async fn update_image_record(
     pool: &Pool<Postgres>,
     uuid: Uuid,
-    new_file_name: &str,
+    new_file_name: Option<&str>,
+    new_owner: Option<&str>,
 ) -> Result<PgQueryResult, sqlx::Error> {
-    let (sql, values) = Query::update()
-        .table(Image::Table)
-        .value(Image::FileName, new_file_name)
-        .and_where(Expr::col(Image::Uuid).eq(uuid))
-        .build_sqlx(PostgresQueryBuilder);
+    let mut query = Query::update().table(Image::Table).to_owned();
 
-    sqlx::query_with(&sql, values).execute(pool).await
-}
+    if let Some(file_name) = new_file_name {
+        query = query.value(Image::FileName, file_name).to_owned();
+    }
 
-pub async fn update_image_owner(
-    pool: &Pool<Postgres>,
-    uuid: Uuid,
-    new_owner: &str,
-) -> Result<PgQueryResult, sqlx::Error> {
-    let (sql, values) = Query::update()
-        .table(Image::Table)
-        .value(Image::Owner, new_owner)
+    if let Some(owner) = new_owner {
+        query = query.value(Image::Owner, owner).to_owned();
+    }
+
+    let (sql, values) = query
         .and_where(Expr::col(Image::Uuid).eq(uuid))
         .build_sqlx(PostgresQueryBuilder);
 

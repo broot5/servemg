@@ -138,33 +138,32 @@ async fn delete_image(Path(uuid): Path<String>) -> impl IntoResponse {
     StatusCode::OK
 }
 
-async fn patch_image(Path(uuid): Path<String>, Json(payload): Json<serde_json::Value>) {
+async fn patch_image(
+    Path(uuid): Path<String>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
     // 해당 uuid 가진 row의 file_name column 변경
     // 해당 uuid 가진 row의 owner column 변경
     let pool = db::create_pool().await.unwrap();
 
-    let new_file_name = &payload["file_name"];
-    let new_owner = &payload["owner"];
+    let new_file_name = payload["file_name"]
+        .is_string()
+        .then(|| payload["file_name"].as_str().unwrap());
 
-    if new_file_name.is_string() {
-        db::update_image_file_name(
-            &pool,
-            Uuid::parse_str(&uuid).unwrap(),
-            &new_file_name.to_string(),
-        )
-        .await
-        .unwrap();
-    }
+    let new_owner = payload["owner"]
+        .is_string()
+        .then(|| payload["owner"].as_str().unwrap());
 
-    if new_owner.is_string() {
-        db::update_image_owner(
-            &pool,
-            Uuid::parse_str(&uuid).unwrap(),
-            &new_owner.to_string(),
-        )
-        .await
-        .unwrap();
-    }
+    db::update_image_record(
+        &pool,
+        Uuid::parse_str(&uuid).unwrap(),
+        new_file_name,
+        new_owner,
+    )
+    .await
+    .unwrap();
+
+    StatusCode::OK
 }
 
 async fn view_image(Path(uuid): Path<String>) -> impl IntoResponse {
