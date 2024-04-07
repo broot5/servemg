@@ -20,7 +20,7 @@ struct AppState {
 
 #[tokio::main]
 async fn main() {
-    dotenvy::dotenv().expect(".env file not found");
+    dotenvy::dotenv().ok();
 
     let state = AppState {
         pool: db::create_pool().await.unwrap(),

@@ -25,6 +25,7 @@ pub async fn get_client() -> Result<Client, aws_sdk_s3::Error> {
         .region(Region::new(
             env::var("S3_REGION").expect("S3_REGION environment variable not found"),
         ))
+        .force_path_style(true)
         .build();
 
     Ok(aws_sdk_s3::Client::from_conf(s3_config))
