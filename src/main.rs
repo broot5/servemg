@@ -2,22 +2,31 @@ mod db;
 mod storage;
 
 use axum::{
-    extract::{DefaultBodyLimit, Json, Multipart, Path},
+    extract::{DefaultBodyLimit, Json, Multipart, Path, State},
     http::{header, StatusCode},
     response::{Html, IntoResponse},
     routing::{get, post},
     Router,
 };
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use db::ImageStruct;
+
+#[derive(Clone)]
+struct AppState {
+    pool: PgPool,
+}
 
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().expect(".env file not found");
 
-    let pool = db::create_pool().await.unwrap();
-    db::create_table(&pool).await.unwrap();
+    let state = AppState {
+        pool: db::create_pool().await.unwrap(),
+    };
+
+    db::create_table(&state.pool).await.unwrap();
 
     let app = Router::new()
         .route("/images", post(upload_image))
@@ -26,15 +35,19 @@ async fn main() {
             get(get_image).delete(delete_image).patch(patch_image),
         )
         .route("/images/:uuid/view", get(view_image))
+        .with_state(state)
         .layer(DefaultBodyLimit::max(52428800)); // 50MB
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn upload_image(mut multipart: Multipart) -> impl IntoResponse {
+async fn upload_image(
+    State(state): State<AppState>,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
     // 이미지 읽어서 storage에 저장 후 db에 저장
-    let pool = db::create_pool().await.unwrap();
+    let pool = state.pool;
 
     match multipart.next_field().await.unwrap() {
         Some(field) => {
@@ -77,9 +90,9 @@ async fn upload_image(mut multipart: Multipart) -> impl IntoResponse {
     }
 }
 
-async fn get_image(Path(uuid): Path<String>) -> impl IntoResponse {
+async fn get_image(State(state): State<AppState>, Path(uuid): Path<String>) -> impl IntoResponse {
     // uuid로 storage 에서 바로 불러오기
-    let pool = db::create_pool().await.unwrap();
+    let pool = state.pool;
 
     let row = db::get_image_record(&pool, Uuid::parse_str(&uuid).unwrap())
         .await
@@ -105,9 +118,12 @@ async fn get_image(Path(uuid): Path<String>) -> impl IntoResponse {
     (headers, body)
 }
 
-async fn delete_image(Path(uuid): Path<String>) -> impl IntoResponse {
+async fn delete_image(
+    State(state): State<AppState>,
+    Path(uuid): Path<String>,
+) -> impl IntoResponse {
     // 해당 uuid 가진 row storage에서 삭제하고 db에서 삭제
-    let pool = db::create_pool().await.unwrap();
+    let pool = state.pool;
 
     let client = storage::get_client().await.unwrap();
     storage::remove_object(&client, "image", &uuid)
@@ -122,12 +138,13 @@ async fn delete_image(Path(uuid): Path<String>) -> impl IntoResponse {
 }
 
 async fn patch_image(
+    State(state): State<AppState>,
     Path(uuid): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> impl IntoResponse {
     // 해당 uuid 가진 row의 file_name column 변경
     // 해당 uuid 가진 row의 owner column 변경
-    let pool = db::create_pool().await.unwrap();
+    let pool = state.pool;
 
     let new_file_name = payload
         .get("file_name")

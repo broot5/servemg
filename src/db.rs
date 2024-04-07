@@ -1,6 +1,6 @@
 use sea_query::*;
 use sea_query_binder::SqlxBinder;
-use sqlx::{postgres::PgQueryResult, Pool, Postgres};
+use sqlx::{postgres::PgQueryResult, PgPool};
 use std::env;
 use uuid::Uuid;
 
@@ -34,12 +34,12 @@ impl Iden for Image {
     }
 }
 
-pub async fn create_pool() -> Result<Pool<Postgres>, sqlx::Error> {
+pub async fn create_pool() -> Result<PgPool, sqlx::Error> {
     let db_url = env::var("DB_URL").expect("DB_URL environment variable not found");
     sqlx::PgPool::connect(&db_url).await
 }
 
-pub async fn create_table(pool: &Pool<Postgres>) -> Result<PgQueryResult, sqlx::Error> {
+pub async fn create_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Error> {
     let sql = Table::create()
         .table(Image::Table)
         .if_not_exists()
@@ -52,7 +52,7 @@ pub async fn create_table(pool: &Pool<Postgres>) -> Result<PgQueryResult, sqlx::
 }
 
 pub async fn insert_image_record(
-    pool: &Pool<Postgres>,
+    pool: &PgPool,
     image_struct: &ImageStruct,
 ) -> Result<PgQueryResult, sqlx::Error> {
     let (sql, values) = Query::insert()
@@ -68,10 +68,7 @@ pub async fn insert_image_record(
     sqlx::query_with(&sql, values).execute(pool).await
 }
 
-pub async fn get_image_record(
-    pool: &Pool<Postgres>,
-    uuid: Uuid,
-) -> Result<ImageStruct, sqlx::Error> {
+pub async fn get_image_record(pool: &PgPool, uuid: Uuid) -> Result<ImageStruct, sqlx::Error> {
     let (sql, values) = Query::select()
         .column(Asterisk)
         .from(Image::Table)
@@ -83,10 +80,7 @@ pub async fn get_image_record(
         .await
 }
 
-pub async fn delete_image_record(
-    pool: &Pool<Postgres>,
-    uuid: Uuid,
-) -> Result<PgQueryResult, sqlx::Error> {
+pub async fn delete_image_record(pool: &PgPool, uuid: Uuid) -> Result<PgQueryResult, sqlx::Error> {
     let (sql, values) = Query::delete()
         .from_table(Image::Table)
         .and_where(Expr::col(Image::Uuid).eq(uuid))
@@ -96,7 +90,7 @@ pub async fn delete_image_record(
 }
 
 pub async fn update_image_record(
-    pool: &Pool<Postgres>,
+    pool: &PgPool,
     uuid: Uuid,
     new_file_name: Option<&str>,
     new_owner: Option<&str>,
