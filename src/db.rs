@@ -34,11 +34,13 @@ impl Iden for Image {
     }
 }
 
+#[tracing::instrument]
 pub async fn create_pool() -> Result<PgPool, sqlx::Error> {
     let db_url = env::var("DB_URL").expect("DB_URL environment variable not found");
     sqlx::PgPool::connect(&db_url).await
 }
 
+#[tracing::instrument]
 pub async fn create_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Error> {
     let sql = Table::create()
         .table(Image::Table)
@@ -48,9 +50,12 @@ pub async fn create_table(pool: &PgPool) -> Result<PgQueryResult, sqlx::Error> {
         .col(ColumnDef::new(Image::Owner).string().not_null())
         .build(PostgresQueryBuilder);
 
+    tracing::info!("Executing SQL: {}", &sql);
+
     sqlx::query(&sql).execute(pool).await
 }
 
+#[tracing::instrument]
 pub async fn insert_image_record(
     pool: &PgPool,
     image_struct: &ImageStruct,
@@ -65,9 +70,12 @@ pub async fn insert_image_record(
         ])
         .build_sqlx(PostgresQueryBuilder);
 
+    tracing::info!("Executing SQL: {}\nValues: {:?}", &sql, &values);
+
     sqlx::query_with(&sql, values).execute(pool).await
 }
 
+#[tracing::instrument]
 pub async fn get_image_record(pool: &PgPool, uuid: Uuid) -> Result<ImageStruct, sqlx::Error> {
     let (sql, values) = Query::select()
         .column(Asterisk)
@@ -75,20 +83,26 @@ pub async fn get_image_record(pool: &PgPool, uuid: Uuid) -> Result<ImageStruct, 
         .and_where(Expr::col(Image::Uuid).eq(uuid))
         .build_sqlx(PostgresQueryBuilder);
 
+    tracing::info!("Executing SQL: {}\nValues: {:?}", &sql, &values);
+
     sqlx::query_as_with::<_, ImageStruct, _>(&sql, values)
         .fetch_one(pool)
         .await
 }
 
+#[tracing::instrument]
 pub async fn delete_image_record(pool: &PgPool, uuid: Uuid) -> Result<PgQueryResult, sqlx::Error> {
     let (sql, values) = Query::delete()
         .from_table(Image::Table)
         .and_where(Expr::col(Image::Uuid).eq(uuid))
         .build_sqlx(PostgresQueryBuilder);
 
+    tracing::info!("Executing SQL: {}\nValues: {:?}", &sql, &values);
+
     sqlx::query_with(&sql, values).execute(pool).await
 }
 
+#[tracing::instrument]
 pub async fn update_image_record(
     pool: &PgPool,
     uuid: Uuid,
@@ -101,14 +115,18 @@ pub async fn update_image_record(
         .to_owned();
 
     if let Some(file_name) = new_file_name {
+        tracing::info!("Valid data provided for file_name: {}", file_name);
         query = query.value(Image::FileName, file_name).to_owned();
     }
 
     if let Some(owner) = new_owner {
+        tracing::info!("Valid data provided for owner: {}", owner);
         query = query.value(Image::Owner, owner).to_owned();
     }
 
     let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
+
+    tracing::info!("Executing SQL: {}\nValues: {:?}", &sql, &values);
 
     sqlx::query_with(&sql, values).execute(pool).await
 }
