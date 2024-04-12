@@ -1,6 +1,7 @@
 mod db;
 mod storage;
 
+use aws_sdk_s3::Client;
 use axum::{
     extract::{DefaultBodyLimit, Json, Multipart, Path, State},
     http::{header, StatusCode},
@@ -16,6 +17,7 @@ use db::ImageStruct;
 #[derive(Clone)]
 struct AppState {
     pool: PgPool,
+    s3_client: Client,
 }
 
 #[tokio::main]
@@ -26,6 +28,7 @@ async fn main() {
 
     let state = AppState {
         pool: db::create_pool().await.unwrap(),
+        s3_client: storage::get_client().await.unwrap(),
     };
 
     db::create_table(&state.pool).await.unwrap();
@@ -49,8 +52,6 @@ async fn upload_image(
     mut multipart: Multipart,
 ) -> impl IntoResponse {
     // 이미지 읽어서 storage에 저장 후 db에 저장
-    let pool = state.pool;
-
     match multipart.next_field().await.unwrap() {
         Some(field) => {
             // let name = field.name().unwrap_or_default().to_string();
@@ -66,9 +67,8 @@ async fn upload_image(
                 owner: "anon".to_string(),
             };
 
-            let client = storage::get_client().await.unwrap();
             storage::upload_object(
-                &client,
+                &state.s3_client,
                 "image",
                 data,
                 &record.uuid.as_hyphenated().to_string(),
@@ -76,7 +76,7 @@ async fn upload_image(
             .await
             .unwrap();
 
-            db::insert_image_record(&pool, &record).await.unwrap();
+            db::insert_image_record(&state.pool, &record).await.unwrap();
 
             (
                 StatusCode::CREATED,
@@ -94,9 +94,7 @@ async fn upload_image(
 
 async fn get_image(State(state): State<AppState>, Path(uuid): Path<String>) -> impl IntoResponse {
     // uuid로 storage 에서 바로 불러오기
-    let pool = state.pool;
-
-    let row = db::get_image_record(&pool, Uuid::parse_str(&uuid).unwrap())
+    let row = db::get_image_record(&state.pool, Uuid::parse_str(&uuid).unwrap())
         .await
         .unwrap();
 
@@ -112,10 +110,13 @@ async fn get_image(State(state): State<AppState>, Path(uuid): Path<String>) -> i
         ),
     ];
 
-    let client = storage::get_client().await.unwrap();
-    let body = storage::get_object(&client, "image", &row.uuid.as_hyphenated().to_string())
-        .await
-        .unwrap();
+    let body = storage::get_object(
+        &state.s3_client,
+        "image",
+        &row.uuid.as_hyphenated().to_string(),
+    )
+    .await
+    .unwrap();
 
     (headers, body)
 }
@@ -125,14 +126,11 @@ async fn delete_image(
     Path(uuid): Path<String>,
 ) -> impl IntoResponse {
     // 해당 uuid 가진 row storage에서 삭제하고 db에서 삭제
-    let pool = state.pool;
-
-    let client = storage::get_client().await.unwrap();
-    storage::remove_object(&client, "image", &uuid)
+    storage::remove_object(&state.s3_client, "image", &uuid)
         .await
         .unwrap();
 
-    db::delete_image_record(&pool, Uuid::parse_str(&uuid).unwrap())
+    db::delete_image_record(&state.pool, Uuid::parse_str(&uuid).unwrap())
         .await
         .unwrap();
 
@@ -146,8 +144,6 @@ async fn patch_image(
 ) -> impl IntoResponse {
     // 해당 uuid 가진 row의 file_name column 변경
     // 해당 uuid 가진 row의 owner column 변경
-    let pool = state.pool;
-
     let new_file_name = payload
         .get("file_name")
         .and_then(|v| v.as_str())
@@ -163,7 +159,7 @@ async fn patch_image(
     }
 
     db::update_image_record(
-        &pool,
+        &state.pool,
         Uuid::parse_str(&uuid).unwrap(),
         new_file_name,
         new_owner,
