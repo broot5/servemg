@@ -1,34 +1,76 @@
 use aws_sdk_s3::{
     config::Region,
     error::SdkError,
-    operation::put_object::{PutObjectError, PutObjectOutput},
+    operation::{
+        create_bucket::{CreateBucketError, CreateBucketOutput},
+        put_object::{PutObjectError, PutObjectOutput},
+    },
     primitives::ByteStream,
+    types::{BucketLocationConstraint, CreateBucketConfiguration},
     Client,
 };
 use bytes::{Bytes, BytesMut};
-use std::env;
 
-pub async fn get_client() -> Result<Client, aws_sdk_s3::Error> {
+pub async fn get_client(
+    s3_access_key_id: &str,
+    s3_secret_access_key: &str,
+    s3_endpoint_url: &str,
+    s3_region: &str,
+) -> Result<Client, aws_sdk_s3::Error> {
     let credentials = aws_sdk_s3::config::Credentials::new(
-        env::var("S3_ACCESS_KEY_ID").expect("S3_ACCESS_KEY_ID environment variable not found"),
-        env::var("S3_SECRET_ACCESS_KEY")
-            .expect("S3_SECRET_ACCESS_KEY environment variable not found"),
+        s3_access_key_id,
+        s3_secret_access_key,
         None,
         None,
         "loaded-from-custom-env",
     );
     let s3_config = aws_sdk_s3::config::Builder::new()
-        .endpoint_url(
-            env::var("S3_ENDPOINT_URL").expect("S3_ENDPOINT_URL environment variable not found"),
-        )
+        .endpoint_url(s3_endpoint_url)
         .credentials_provider(credentials)
-        .region(Region::new(
-            env::var("S3_REGION").expect("S3_REGION environment variable not found"),
-        ))
+        .region(Region::new(s3_region.to_string()))
         .force_path_style(true)
         .build();
 
     Ok(aws_sdk_s3::Client::from_conf(s3_config))
+}
+
+pub async fn show_buckets(client: &Client, region: &str) -> Result<Vec<String>, aws_sdk_s3::Error> {
+    let resp = client.list_buckets().send().await?;
+    let buckets = resp.buckets();
+
+    let mut result: Vec<String> = Vec::new();
+
+    for bucket in buckets {
+        let r = client
+            .get_bucket_location()
+            .bucket(bucket.name().unwrap_or_default())
+            .send()
+            .await?;
+
+        if r.location_constraint().unwrap().as_ref() == region {
+            //println!("{}", bucket.name().unwrap_or_default());
+            result.push(bucket.name().unwrap_or_default().to_string())
+        }
+    }
+
+    Ok(result)
+}
+
+pub async fn create_bucket(
+    client: &Client,
+    region: &str,
+    bucket: &str,
+) -> Result<CreateBucketOutput, SdkError<CreateBucketError>> {
+    let constraint = BucketLocationConstraint::from(region);
+    let cfg = CreateBucketConfiguration::builder()
+        .location_constraint(constraint)
+        .build();
+    client
+        .create_bucket()
+        .create_bucket_configuration(cfg)
+        .bucket(bucket)
+        .send()
+        .await
 }
 
 pub async fn upload_object(

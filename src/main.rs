@@ -10,6 +10,7 @@ use axum::{
     Router,
 };
 use sqlx::PgPool;
+use std::env;
 use uuid::Uuid;
 
 use db::ImageStruct;
@@ -27,11 +28,39 @@ async fn main() {
     dotenvy::dotenv().ok();
 
     let state = AppState {
-        pool: db::create_pool().await.unwrap(),
-        s3_client: storage::get_client().await.unwrap(),
+        pool: db::create_pool(&env::var("DB_URL").expect("DB_URL environment variable not found"))
+            .await
+            .unwrap(),
+        s3_client: storage::get_client(
+            &env::var("S3_ACCESS_KEY_ID").expect("S3_ACCESS_KEY_ID environment variable not found"),
+            &env::var("S3_SECRET_ACCESS_KEY")
+                .expect("S3_SECRET_ACCESS_KEY environment variable not found"),
+            &env::var("S3_ENDPOINT_URL").expect("S3_ENDPOINT_URL environment variable not found"),
+            &env::var("S3_REGION").expect("S3_REGION environment variable not found"),
+        )
+        .await
+        .unwrap(),
     };
 
     db::create_table(&state.pool).await.unwrap();
+
+    if !storage::show_buckets(
+        &state.s3_client,
+        &env::var("S3_REGION").expect("S3_REGION environment variable not found"),
+    )
+    .await
+    .unwrap()
+    .iter()
+    .any(|x| x == "image")
+    {
+        storage::create_bucket(
+            &state.s3_client,
+            &env::var("S3_REGION").expect("S3_REGION environment variable not found"),
+            "image",
+        )
+        .await
+        .unwrap();
+    }
 
     let app = Router::new()
         .route("/images", post(upload_image))

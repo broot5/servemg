@@ -1,7 +1,6 @@
 use sea_query::*;
 use sea_query_binder::SqlxBinder;
 use sqlx::{postgres::PgQueryResult, PgPool};
-use std::env;
 use uuid::Uuid;
 
 enum Image {
@@ -35,9 +34,8 @@ impl Iden for Image {
 }
 
 #[tracing::instrument]
-pub async fn create_pool() -> Result<PgPool, sqlx::Error> {
-    let db_url = env::var("DB_URL").expect("DB_URL environment variable not found");
-    sqlx::PgPool::connect(&db_url).await
+pub async fn create_pool(db_url: &str) -> Result<PgPool, sqlx::Error> {
+    sqlx::PgPool::connect(db_url).await
 }
 
 #[tracing::instrument]
