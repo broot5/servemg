@@ -5,7 +5,7 @@ use aws_sdk_s3::Client;
 use axum::{
     extract::{DefaultBodyLimit, Json, Multipart, Path, State},
     http::{header, StatusCode},
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
     Router,
 };
@@ -76,10 +76,7 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn upload_image(
-    State(state): State<AppState>,
-    mut multipart: Multipart,
-) -> impl IntoResponse {
+async fn upload_image(State(state): State<AppState>, mut multipart: Multipart) -> Response {
     // 이미지 읽어서 storage에 저장 후 db에 저장
     match multipart.next_field().await.unwrap() {
         Some(field) => {
@@ -107,70 +104,64 @@ async fn upload_image(
 
             db::insert_image_record(&state.pool, &record).await.unwrap();
 
-            (
-                StatusCode::CREATED,
-                [(header::CONTENT_TYPE, "application/json")],
-                serde_json::to_string(&record).unwrap(),
-            )
+            (StatusCode::CREATED, Json(&record)).into_response()
         }
-        None => (
-            StatusCode::BAD_REQUEST,
-            [(header::CONTENT_TYPE, "text/plain")],
-            "No image provided".into(),
-        ),
+        None => (StatusCode::BAD_REQUEST, "No image provided").into_response(),
     }
 }
 
-async fn get_image(State(state): State<AppState>, Path(uuid): Path<String>) -> impl IntoResponse {
+async fn get_image(State(state): State<AppState>, Path(uuid): Path<String>) -> Response {
     // uuid로 storage 에서 바로 불러오기
-    let row = db::get_image_record(&state.pool, Uuid::parse_str(&uuid).unwrap())
-        .await
-        .unwrap();
+    match db::get_image_record(&state.pool, Uuid::parse_str(&uuid).unwrap_or_default()).await {
+        Ok(row) => {
+            let content_type = mime_guess::from_path(std::path::Path::new(&row.file_name))
+                .first_raw()
+                .unwrap();
 
-    let content_type = mime_guess::from_path(std::path::Path::new(&row.file_name))
-        .first_raw()
-        .unwrap();
+            let headers = [
+                (header::CONTENT_TYPE, content_type.to_string()),
+                (
+                    header::CONTENT_DISPOSITION,
+                    format!(r#"attachment; filename="{}""#, &row.file_name),
+                ),
+            ];
 
-    let headers = [
-        (header::CONTENT_TYPE, content_type.to_string()),
-        (
-            header::CONTENT_DISPOSITION,
-            format!(r#"attachment; filename="{}""#, &row.file_name),
-        ),
-    ];
+            let body = storage::get_object(
+                &state.s3_client,
+                "image",
+                &row.uuid.as_hyphenated().to_string(),
+            )
+            .await
+            .unwrap();
 
-    let body = storage::get_object(
-        &state.s3_client,
-        "image",
-        &row.uuid.as_hyphenated().to_string(),
-    )
-    .await
-    .unwrap();
-
-    (headers, body)
+            (StatusCode::OK, headers, body).into_response()
+        }
+        Err(_) => (
+            StatusCode::NOT_FOUND,
+            format!("Image with UUID {} not found", uuid),
+        )
+            .into_response(),
+    }
 }
 
-async fn delete_image(
-    State(state): State<AppState>,
-    Path(uuid): Path<String>,
-) -> impl IntoResponse {
+async fn delete_image(State(state): State<AppState>, Path(uuid): Path<String>) -> Response {
     // 해당 uuid 가진 row storage에서 삭제하고 db에서 삭제
     storage::remove_object(&state.s3_client, "image", &uuid)
         .await
         .unwrap();
 
-    db::delete_image_record(&state.pool, Uuid::parse_str(&uuid).unwrap())
+    db::delete_image_record(&state.pool, Uuid::parse_str(&uuid).unwrap_or_default())
         .await
         .unwrap();
 
-    StatusCode::OK
+    StatusCode::OK.into_response()
 }
 
 async fn patch_image(
     State(state): State<AppState>,
     Path(uuid): Path<String>,
     Json(payload): Json<serde_json::Value>,
-) -> impl IntoResponse {
+) -> Response {
     // 해당 uuid 가진 row의 file_name column 변경
     // 해당 uuid 가진 row의 owner column 변경
     let new_file_name = payload
@@ -184,21 +175,21 @@ async fn patch_image(
         .filter(|s| !s.is_empty());
 
     if new_file_name.is_none() && new_owner.is_none() {
-        return (StatusCode::BAD_REQUEST, "No valid data provided for update");
+        return (StatusCode::BAD_REQUEST, "No valid data provided for update").into_response();
     }
 
     db::update_image_record(
         &state.pool,
-        Uuid::parse_str(&uuid).unwrap(),
+        Uuid::parse_str(&uuid).unwrap_or_default(),
         new_file_name,
         new_owner,
     )
     .await
     .unwrap();
 
-    (StatusCode::OK, "Image record updated successfully")
+    (StatusCode::OK, "Image record updated successfully").into_response()
 }
 
-async fn view_image(Path(uuid): Path<String>) -> impl IntoResponse {
-    Html(format!(r#"<img src="/images/{}" alt="image">"#, uuid))
+async fn view_image(Path(uuid): Path<String>) -> Response {
+    Html(format!(r#"<img src="/images/{}" alt="image">"#, uuid)).into_response()
 }

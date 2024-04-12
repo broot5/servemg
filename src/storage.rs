@@ -48,7 +48,6 @@ pub async fn show_buckets(client: &Client, region: &str) -> Result<Vec<String>, 
             .await?;
 
         if r.location_constraint().unwrap().as_ref() == region {
-            //println!("{}", bucket.name().unwrap_or_default());
             result.push(bucket.name().unwrap_or_default().to_string())
         }
     }
