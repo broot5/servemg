@@ -13,8 +13,6 @@ use sqlx::PgPool;
 use std::env;
 use uuid::Uuid;
 
-use db::ImageStruct;
-
 #[derive(Clone)]
 struct AppState {
     pool: PgPool,
@@ -87,7 +85,7 @@ async fn upload_image(State(state): State<AppState>, mut multipart: Multipart) -
 
             // Check if content_type is image
 
-            let record = ImageStruct {
+            let record = db::ImageStruct {
                 uuid: Uuid::new_v4(),
                 file_name,
                 owner: "anon".to_string(),
